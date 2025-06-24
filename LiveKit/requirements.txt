@@ -1,0 +1,8 @@
+dotenv
+livekit
+openai
+azure
+silero
+tavus
+noise-cancellation
+# Add any additional dependencies as needed
