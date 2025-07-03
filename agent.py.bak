@@ -1,0 +1,84 @@
+from dotenv import load_dotenv
+import os
+from Catalog import data2
+from livekit import agents
+from livekit.agents import ChatContext, AgentSession, Agent, RoomInputOptions, RoomOutputOptions
+from livekit.plugins import (
+    openai,
+    #cartesia,
+    #deepgram,
+    noise_cancellation,
+    silero,
+    azure,
+    tavus
+)
+
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
+#from livekit.plugins.openai import OpenAIWhisperSTT
+load_dotenv()
+print("TAVUS_API_KEY:", os.getenv("TAVUS_API_KEY"))
+initial_ctx = ChatContext()
+initial_ctx.add_message(
+    role="assistant",
+    content=f"Here is the school catalog information: {data2}"
+)
+
+class Assistant(Agent):
+    def __init__(self):
+        super().__init__(instructions="أنت مساعد صوتي ذكي للمدارس السعودية. تحدث دائمًا باللغة العربية.",
+                         chat_ctx=initial_ctx)
+
+    async def on_conversation_item_added(self, item, ctx):
+        pass
+
+async def entrypoint(ctx: agents.JobContext):
+    session = AgentSession(
+        stt=openai.STT(
+            model="gpt-4o-transcribe",
+               
+        ),
+        
+        #stt=openai.STT(model="whisper-1", language="ar"),
+        #stt=deepgram.STT(model="nova-3", language="en"),
+        llm=openai.LLM(model="gpt-4o-mini"),
+        vad=silero.VAD.load(),
+        turn_detection=MultilingualModel(),
+        #turn_detection=VADTurnDetector(),
+        #tts = openai.TTS(
+    #model="gpt-4o-mini-tts"),
+
+     tts=azure.TTS(
+            #model="azure-tts",
+            #voice="ar-OM-AbdullahNeural",  # Change to your preferred voice
+            voice="ar-SA-HamedNeural",  # Change to your preferred voice
+            
+            #region="qatarcentral"  # Change to your Azure region
+        )
+    )
+    await session.start(
+        room=ctx.room,
+        agent=Assistant(),
+        room_input_options=RoomInputOptions(
+            # LiveKit Cloud enhanced noise cancellation
+            # - If self-hosting, omit this parameter
+            # - For telephony applications, use `BVCTelephony` for best results
+            noise_cancellation=noise_cancellation.BVC(), 
+        ),
+        room_output_options=RoomOutputOptions(
+         # Disable audio output to the room. The avatar plugin publishes audio separately.
+         audio_enabled=True,
+         # text_enabled removed
+         ),
+
+    )
+    await ctx.connect()
+   
+    await session.generate_reply(
+        instructions="قم بتحية المستخدمين وعرّف نفسك بأنك المساعد الذكي للمدارس السعودية ثم قل يا هلا بيكم. تكلم دائما باللغة العربية",
+    )
+
+if __name__ == "__main__":
+    import livekit.agents.cli
+    livekit.agents.cli.run_app(
+        livekit.agents.WorkerOptions(entrypoint_fnc=entrypoint)
+    )

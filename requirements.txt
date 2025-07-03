@@ -5,4 +5,6 @@ openai
 azure
 silero
 tavus
+openai
+
 # If you use any other plugin directly, add it here

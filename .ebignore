@@ -1,0 +1,13 @@
+# Ignore frontend code and other non-backend files for Elastic Beanstalk deployment
+voice-assistant-frontend/
+.venv/
+.vscode/
+.git/
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+README.md

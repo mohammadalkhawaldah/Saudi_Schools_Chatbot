@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+.env.*
+KMS/logs/
+conversations.log
+
+# Node.js/Next.js
+node_modules/
+.next/
+.env.local
+.env.development
+.env.production
+pnpm-lock.yaml
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+# .gitignore
+.venv/
+__pycache__/
+*.pyc
+KMS/logs/
+.env

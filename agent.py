@@ -25,28 +25,63 @@ initial_ctx.add_message(
 
 class Assistant(Agent):
     def __init__(self):
-        super().__init__(instructions="أنت مساعد صوتي ذكي للمدارس السعودية. تحدث دائمًا باللغة العربية.",
+        super().__init__(instructions="أنت مساعد صوتي ذكي للمدارس السعودية. تحدث دائمًا باللغة العربية. لا تستخدم رموز النجمة أو ** أو أي تنسيقات ماركداون في إجاباتك.",
                          chat_ctx=initial_ctx)
 
-    async def on_conversation_item_added(self, item, ctx):
-        print(f"[DEBUG] on_conversation_item_added called: role={item.role}, content={item.content}")
-        user_id = getattr(ctx.participant, 'identity', 'unknown')
-        if item.role == "user":
-            log_user(user_id)
-            # Store the user message, response will be logged after agent replies
-            ctx._last_user_message = item.content
-        elif item.role == "assistant":
-            # Log the conversation (user message and bot response)
-            user_message = getattr(ctx, '_last_user_message', '')
-            log_conversation(user_id, user_message, item.content)
+    async def on_generate_reply(self, reply, ctx):
+        # Remove Markdown bold (**) from the reply content before TTS
+        if hasattr(reply, 'content') and isinstance(reply.content, str):
+            reply.content = reply.content.replace('**', '')
+        elif hasattr(reply, 'content') and isinstance(reply.content, list):
+            reply.content = [c.replace('**', '') if isinstance(c, str) else c for c in reply.content]
+        return await super().on_generate_reply(reply, ctx)
+
+def setup_conversation_logging(session):
+    """
+    Registers an event handler on the AgentSession to log all conversation items to KMS/logs/conversations.log.
+    """
+    import datetime
+    import os
+    log_dir = os.path.join(os.path.dirname(__file__), 'KMS', 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, 'conversations.log')
+
+    import asyncio
+
+    def log_conversation_item(event):
+        async def do_log():
+            try:
+                item = event.item
+                timestamp = datetime.datetime.now().isoformat()
+                role = item.get('role', 'unknown') if hasattr(item, 'get') else str(item)
+                content = item.get('content', str(item)) if hasattr(item, 'get') else str(item)
+                # Try to get user_id if present (for user messages)
+                user_id = getattr(item, 'user_id', None) or (item.get('user_id', None) if hasattr(item, 'get') else None)
+                # If not present, fallback to event.user_id if available
+                if not user_id:
+                    user_id = getattr(event, 'user_id', None)
+                # Debug: print all available fields for inspection
+                print("DEBUG item:", item)
+                print("DEBUG event:", event)
+                # Compose log entry
+                if user_id:
+                    log_entry = f"[{timestamp}] user_id={user_id} {role}: {content}\n"
+                else:
+                    log_entry = f"[{timestamp}] {role}: {content}\n"
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(log_entry)
+                print("Logged entry:", log_entry)
+            except Exception as e:
+                print("Logging error:", e)
+        asyncio.create_task(do_log())
+
+    session.on("conversation_item_added", log_conversation_item)
 
 async def entrypoint(ctx: agents.JobContext):
     session = AgentSession(
         stt=openai.STT(
             model="gpt-4o-transcribe",
-               
         ),
-        
         #stt=openai.STT(model="whisper-1", language="ar"),
         #stt=deepgram.STT(model="nova-3", language="en"),
         llm=openai.LLM(model="gpt-4o-mini"),
@@ -54,26 +89,17 @@ async def entrypoint(ctx: agents.JobContext):
         turn_detection=MultilingualModel(),
         #turn_detection=VADTurnDetector(),
         #tts = openai.TTS(
-    #model="gpt-4o-mini-tts"),
-
-     tts=azure.TTS(
+        #model="gpt-4o-mini-tts"),
+        tts=azure.TTS(
             #model="azure-tts",
             #voice="ar-OM-AbdullahNeural",  # Change to your preferred voice
             voice="ar-SA-HamedNeural",  # Change to your preferred voice
-            
             #region="qatarcentral"  # Change to your Azure region
         )
     )
-    # tts=azure.TTS(model="azure-tts", voice="ar-OM-AbdullahNeural", region="qatarcentral"),
-    # avatar = tavus.AvatarSession(
-    #   replica_id="rf4703150052",  # ID of the Tavus replica to use
-    #   persona_id="p48fdf065d6b",  # ID of the Tavus persona to use (see preceding section for configuration details)
-    # )
-    # await avatar.start(session, room=ctx.room)
 
-    # --- Conversation logging event subscription ---
-    # Removed manual event subscription; rely on Assistant.on_conversation_item_added
-    # --- End event subscription ---
+    # Register conversation logging event handler
+    setup_conversation_logging(session)
 
     await session.start(
         room=ctx.room,
@@ -82,49 +108,26 @@ async def entrypoint(ctx: agents.JobContext):
             # LiveKit Cloud enhanced noise cancellation
             # - If self-hosting, omit this parameter
             # - For telephony applications, use `BVCTelephony` for best results
-            noise_cancellation=noise_cancellation.BVC(), 
+            noise_cancellation=noise_cancellation.BVC(),
         ),
         room_output_options=RoomOutputOptions(
-         # Disable audio output to the room. The avatar plugin publishes audio separately.
-         audio_enabled=True,
-         # text_enabled removed
-         ),
-
+            # Enable audio output to the room/frontend
+            audio_enabled=True,
+            # text_enabled removed (not supported in your SDK)
+        ),
     )
+    print("[DEBUG] session.start completed, waiting for user input...")
     await ctx.connect()
-   
+
     await session.generate_reply(
         instructions="قم بتحية المستخدمين وعرّف نفسك بأنك المساعد الذكي للمدارس السعودية ثم قل يا هلا بيكم. تكلم دائما باللغة العربية",
     )
 
 if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    import livekit.agents.cli
+    livekit.agents.cli.run_app(
+        livekit.agents.WorkerOptions(entrypoint_fnc=entrypoint)
+    )
 
-import os
-from datetime import datetime
 
-LOG_DIR = "KMS/logs"
-CONVERSATION_LOG = os.path.join(LOG_DIR, "conversations.log")
-USER_LOG = os.path.join(LOG_DIR, "users.txt")
 
-def log_conversation(user_id: str, user_message: str, bot_response: str):
-    os.makedirs(LOG_DIR, exist_ok=True)
-    with open(CONVERSATION_LOG, "a", encoding="utf-8") as f:
-        f.write(f"{datetime.now().isoformat()} | {user_id} | USER: {user_message}\n")
-        f.write(f"{datetime.now().isoformat()} | {user_id} | BOT: {bot_response}\n")
-
-def log_user(user_id: str):
-    os.makedirs(LOG_DIR, exist_ok=True)
-    users = set()
-    if os.path.exists(USER_LOG):
-        with open(USER_LOG, "r", encoding="utf-8") as f:
-            users = set(line.strip() for line in f)
-    if user_id not in users:
-        with open(USER_LOG, "a", encoding="utf-8") as f:
-            f.write(f"{user_id}\n")
-
-def get_total_users():
-    if not os.path.exists(USER_LOG):
-        return 0
-    with open(USER_LOG, "r", encoding="utf-8") as f:
-        return len(set(line.strip() for line in f))
