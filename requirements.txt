@@ -3,8 +3,8 @@ livekit-plugins-noise-cancellation~=0.2
 python-dotenv
 openai
 #azure
-silero
-tavus
-openai
+#silero
+#tavus
+#openai
 
 # If you use any other plugin directly, add it here
