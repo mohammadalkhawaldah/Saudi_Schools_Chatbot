@@ -1,8 +1,11 @@
-livekit-agents[deepgram,openai,cartesia,silero,turn-detector]~=1.0
-livekit-agents[tavus,turn-detector]~=1.0
+
+livekit-agents[deepgram,openai,cartesia,silero,turn-detector,tavus]~=1.0
 livekit-plugins-noise-cancellation~=0.2
 python-dotenv
 openai
+torch
+#tensorflow>=2.0
+#flax
 #azure
 #openai
 
