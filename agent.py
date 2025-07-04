@@ -9,7 +9,7 @@ from livekit.plugins import (
     #deepgram,
     noise_cancellation,
     silero,
-    azure,
+    #azure,
     tavus
 )
 
